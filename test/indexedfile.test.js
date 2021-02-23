@@ -358,6 +358,22 @@ describe('getHeaderText', () => {
   })
 })
 
+describe('region not downloading enough records', () => {
+  it('index file slice check', async () => {
+    // long reads revealed this issue where the index was returning the wrong
+    // entries
+    const index = new CraiIndex({
+      filehandle: testDataFile(
+        'HG002_ONTrel2_16x_RG_HP10xtrioRTG.chr1.cram.crai ',
+      ),
+    })
+    const entries = await index.getEntriesForRange(0, 75100635, 75125544)
+    expect(entries.length).to.equal(2)
+    expect(entries[0].start).to.equal(74378949)
+    expect(entries[1].start).to.equal(74945118)
+  })
+})
+
 describe('troublesome file', () => {
   it('returns the correct sequence', async () => {
     const seq = `GATCACAGGTCTATCACCCTATTAACCACTCACGGGAGCTCTCCATGCATTTGGTATTTT
