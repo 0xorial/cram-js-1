@@ -1,3 +1,4 @@
+/* eslint-disable no-continue,no-plusplus */
 const AbortablePromiseCache = require('abortable-promise-cache').default
 const QuickLRU = require('quick-lru')
 
@@ -28,7 +29,9 @@ function addRecordToIndex(index, record) {
 
   const [seqId, start, span, containerStart, sliceStart, sliceBytes] = record
 
-  if (!index[seqId]) index[seqId] = []
+  if (!index[seqId]) {
+    index[seqId] = []
+  }
 
   index[seqId].push(
     new Slice({
@@ -82,10 +85,10 @@ class CraiIndex {
             'invalid .crai index file. note: file appears to be a .bai index. this is technically legal but please open a github issue if you need support',
           )
         }
-        // interpret the text as regular ascii, since it is
-        // supposed to be only digits and whitespace characters
-        // this is written in a deliberately low-level fashion for performance,
-        // because some .crai files can be pretty large.
+        // interpret the text as regular ascii, since it is supposed to be only
+        // digits and whitespace characters this is written in a deliberately
+        // low-level fashion for performance, because some .crai files can be
+        // pretty large.
         let currentRecord = []
         let currentString = ''
         for (let i = 0; i < uncompressedBuffer.length; i += 1) {
@@ -141,6 +144,56 @@ class CraiIndex {
     return !!(await this.getIndex())[seqId]
   }
 
+  async indexQuery(seqId, pos) {
+    const seqEntries = (await this.getIndex())[seqId]
+    if (!seqEntries) {
+      return []
+    }
+
+    // This sequence is covered by the index, so binary search to find
+    // the optimal starting block. adapted from samtools
+    let j = seqEntries.length - 1
+    let i = 0
+    for (let k = Math.floor(j / 2); k !== i; k = Math.floor((j - i) / 2) + i) {
+      const entry = seqEntries[k]
+      if (entry.start >= pos) {
+        j = k
+        continue
+      }
+      if (entry.start < pos) {
+        i = k
+        continue
+      }
+    }
+
+    if (j >= 0 && seqEntries[j].start < pos) {
+      i = j
+    }
+
+    while (i > 0 && seqEntries[i - 1].start + seqEntries[i - 1].span >= pos) {
+      i--
+    }
+
+    while (
+      i + 1 < seqEntries.length &&
+      (seqEntries[i].start && seqEntries[i].start + seqEntries[i].span < pos)
+    ) {
+      i++
+    }
+    return i
+  }
+
+  async indexQueryLast(seqId, pos) {
+    const seqEntries = (await this.getIndex())[seqId]
+
+    let first = await this.indexQuery(seqId, pos)
+    const last = seqEntries.length - 1
+    while (first < last && seqEntries[first + 1].start <= pos) {
+      first++
+    }
+    return first
+  }
+
   /**
    * fetch index entries for the given range
    *
@@ -158,20 +211,11 @@ class CraiIndex {
       return []
     }
 
-    const compare = entry => {
-      const entryStart = entry.start
-      const entryEnd = entry.start + entry.span
-      if (entryStart >= queryEnd) return -1 // entry is ahead of query
-      if (entryEnd <= queryStart) return 1 // entry is behind query
-      return 0 // entry overlaps query
-    }
-    const bins = []
-    for (let i = 0; i < seqEntries.length; i += 1) {
-      if (compare(seqEntries[i]) === 0) {
-        bins.push(seqEntries[i])
-      }
-    }
-    return bins
+    // this emulates the htslib code for cram_index.c indexQuery and indexQueryLast
+    const start = await this.indexQuery(seqId, queryStart)
+    const end = await this.indexQueryLast(seqId, queryEnd)
+
+    return seqEntries.slice(start, end + 1)
   }
 }
 

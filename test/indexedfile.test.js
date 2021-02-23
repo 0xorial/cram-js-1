@@ -368,9 +368,7 @@ describe('region not downloading enough records', () => {
       ),
     })
     const entries = await index.getEntriesForRange(0, 75100635, 75125544)
-    expect(entries.length).to.equal(2)
-    expect(entries[0].start).to.equal(74378949)
-    expect(entries[1].start).to.equal(74945118)
+    expect(entries.length).to.equal(1)
   })
 })
 
