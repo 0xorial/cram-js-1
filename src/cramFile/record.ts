@@ -1,6 +1,9 @@
 import Constants from './constants'
 
-function decodeReadSequence(cramRecord, refRegion) {
+function decodeReadSequence(
+  cramRecord: CramRecord,
+  refRegion: { start: number; seq: string },
+) {
   // if it has no length, it has no sequence
   if (!cramRecord.lengthOnRef && !cramRecord.readLength) {
     return undefined
@@ -105,11 +108,24 @@ const baseNumbers = {
   N: 4,
 }
 
+interface ReadFeature {
+  code: string
+  refPos: number
+  ref: string
+  sub: string
+  data: unknown
+}
+
+interface Region {
+  start: number
+  seq: string
+}
+
 function decodeBaseSubstitution(
-  cramRecord,
-  refRegion,
-  compressionScheme,
-  readFeature,
+  cramRecord: CramRecord,
+  refRegion: Region,
+  compressionScheme: unknown,
+  readFeature: ReadFeature,
 ) {
   if (!refRegion) {
     return
@@ -121,7 +137,7 @@ function decodeBaseSubstitution(
   if (refBase) {
     readFeature.ref = refBase
   }
-  let baseNumber = baseNumbers[refBase]
+  let baseNumber = baseNumbers[refBase as keyof typeof baseNumbers]
   if (baseNumber === undefined) {
     baseNumber = 4
   }
@@ -136,8 +152,21 @@ function decodeBaseSubstitution(
  * Class of each CRAM record returned by this API.
  */
 export default class CramRecord {
+  tags: Record<string, unknown>
+  readFeatures: ReadFeature[] = []
+  flags: number
+  readBases?: string
+  readLength?: number
+  lengthOnRef?: number
+  alignmentStart?: number
+  templateLength?: number
+  templateSize?: number
+  mate?: { alignmentStart?: number }
+  _refRegion: unknown
+
   constructor() {
     this.tags = {}
+    this.flags = 0
   }
 
   /**
@@ -260,8 +289,11 @@ export default class CramRecord {
       }
 
       const tmp = []
-      let isize = this.templateLength || this.templateSize
-      if (this.alignmentStart > this.mate.alignmentStart && isize > 0) {
+      let isize = this.templateLength || this.templateSize || 0
+      if (
+        (this.alignmentStart || 0) > (this.mate.alignmentStart || 0) &&
+        isize > 0
+      ) {
         isize = -isize
       }
       if (isize > 0) {
@@ -322,16 +354,15 @@ export default class CramRecord {
   }
 
   toJSON() {
-    const data = {}
-    Object.keys(this).forEach(k => {
-      if (k.charAt(0) === '_') {
-        return
-      }
-      data[k] = this[k]
-    })
-
-    data.readBases = this.getReadBases()
-
-    return data
+    return {
+      ...Object.fromEntries(
+        Object.entries(this)
+          .filter(([key]) => !key.charAt(0))
+          .map(([key, value]) => {
+            return [key, value]
+          }),
+      ),
+      readBases: this.getReadBases(),
+    }
   }
 }
